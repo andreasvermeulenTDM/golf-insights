@@ -44,6 +44,11 @@ export class ApiStack extends Stack {
     const reportModelArn = props.reportModelId
       ? `arn:aws:bedrock:${props.kbRegion}:${this.account}:inference-profile/${props.reportModelId}`
       : "";
+    // A cross-region inference profile routes the actual InvokeModel call to one of several
+    // regional foundation-model ARNs -- callers need InvokeModel permission on those too,
+    // not just on the inference-profile ARN itself.
+    const foundationModelArn = (modelId: string) =>
+      `arn:aws:bedrock:*::foundation-model/${modelId.replace(/^(us|eu|apac|global)\./, "")}`;
 
     // --- Auth: single-user Cognito pool -------------------------------------------------
     const userPool = new cognito.UserPool(this, "UserPool", {
@@ -135,15 +140,23 @@ export class ApiStack extends Stack {
     });
     chatFn.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ["bedrock:RetrieveAndGenerate"],
+        // RetrieveAndGenerate performs a retrieval step internally, which is
+        // authorized separately from the RetrieveAndGenerate action itself.
+        actions: ["bedrock:RetrieveAndGenerate", "bedrock:Retrieve"],
         resources: [kbArn],
       })
     );
     if (chatModelArn) {
       chatFn.addToRolePolicy(
         new iam.PolicyStatement({
-          actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
-          resources: [chatModelArn],
+          // GetInferenceProfile is required when modelArn is a cross-region inference
+          // profile -- Bedrock resolves it internally before invoking the underlying model.
+          actions: [
+            "bedrock:InvokeModel",
+            "bedrock:InvokeModelWithResponseStream",
+            "bedrock:GetInferenceProfile",
+          ],
+          resources: [chatModelArn, foundationModelArn(props.chatModelId)],
         })
       );
     }
@@ -170,8 +183,8 @@ export class ApiStack extends Stack {
     if (reportModelArn) {
       generateReportFn.addToRolePolicy(
         new iam.PolicyStatement({
-          actions: ["bedrock:InvokeModel"],
-          resources: [reportModelArn],
+          actions: ["bedrock:InvokeModel", "bedrock:GetInferenceProfile"],
+          resources: [reportModelArn, foundationModelArn(props.reportModelId)],
         })
       );
     }
@@ -201,9 +214,12 @@ export class ApiStack extends Stack {
     reportsTable.grantReadData(getReportFn);
 
     // --- HTTP API ---------------------------------------------------------------------------
+    // CORS origins must match the browser's Origin header exactly (no trailing slash),
+    // whereas callbackUrls/logoutUrls are full redirect URIs and do have a trailing slash.
+    const corsOrigins = props.callbackUrls.map((url) => url.replace(/\/$/, ""));
     const httpApi = new HttpApi(this, "HttpApi", {
       corsPreflight: {
-        allowOrigins: props.callbackUrls,
+        allowOrigins: corsOrigins,
         allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.POST],
         allowHeaders: ["Authorization", "Content-Type"],
       },
