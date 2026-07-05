@@ -14,10 +14,10 @@ import * as iam from "aws-cdk-lib/aws-iam";
 export interface ApiStackProps extends StackProps {
   kbId: string;
   kbRegion: string;
-  /** Cross-region inference profile ARN for the chat model. Leave blank until verified (Phase 0). */
-  chatModelArn: string;
-  /** Cross-region inference profile ARN for the one-pager report model. Leave blank until verified (Phase 0). */
-  reportModelArn: string;
+  /** Cross-region inference profile ID for the chat model, e.g. "us.anthropic.claude-opus-4-6-v1". Leave blank until verified (Phase 0). */
+  chatModelId: string;
+  /** Cross-region inference profile ID for the one-pager report model. Leave blank until verified (Phase 0). */
+  reportModelId: string;
   callbackUrls: string[];
   logoutUrls: string[];
   /** Email of the single owner user. If blank, the Cognito user is not auto-created (see scripts/seed-cognito-user.ts). */
@@ -36,6 +36,14 @@ export class ApiStack extends Stack {
     super(scope, id, props);
 
     const kbArn = `arn:aws:bedrock:${props.kbRegion}:${this.account}:knowledge-base/${props.kbId}`;
+    // Built from account + region at synth time, rather than accepting a full ARN via
+    // context, so the AWS account ID never has to be hardcoded in committed cdk.json.
+    const chatModelArn = props.chatModelId
+      ? `arn:aws:bedrock:${props.kbRegion}:${this.account}:inference-profile/${props.chatModelId}`
+      : "";
+    const reportModelArn = props.reportModelId
+      ? `arn:aws:bedrock:${props.kbRegion}:${this.account}:inference-profile/${props.reportModelId}`
+      : "";
 
     // --- Auth: single-user Cognito pool -------------------------------------------------
     const userPool = new cognito.UserPool(this, "UserPool", {
@@ -122,7 +130,7 @@ export class ApiStack extends Stack {
       environment: {
         KB_ID: props.kbId,
         KB_REGION: props.kbRegion,
-        CHAT_MODEL_ARN: props.chatModelArn,
+        CHAT_MODEL_ARN: chatModelArn,
       },
     });
     chatFn.addToRolePolicy(
@@ -131,11 +139,11 @@ export class ApiStack extends Stack {
         resources: [kbArn],
       })
     );
-    if (props.chatModelArn) {
+    if (chatModelArn) {
       chatFn.addToRolePolicy(
         new iam.PolicyStatement({
           actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
-          resources: [props.chatModelArn],
+          resources: [chatModelArn],
         })
       );
     }
@@ -148,7 +156,7 @@ export class ApiStack extends Stack {
       environment: {
         KB_ID: props.kbId,
         KB_REGION: props.kbRegion,
-        REPORT_MODEL_ARN: props.reportModelArn,
+        REPORT_MODEL_ARN: reportModelArn,
         REPORTS_BUCKET: reportsBucket.bucketName,
         REPORTS_TABLE: reportsTable.tableName,
       },
@@ -159,11 +167,11 @@ export class ApiStack extends Stack {
         resources: [kbArn],
       })
     );
-    if (props.reportModelArn) {
+    if (reportModelArn) {
       generateReportFn.addToRolePolicy(
         new iam.PolicyStatement({
           actions: ["bedrock:InvokeModel"],
-          resources: [props.reportModelArn],
+          resources: [reportModelArn],
         })
       );
     }

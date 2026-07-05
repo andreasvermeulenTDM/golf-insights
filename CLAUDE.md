@@ -18,10 +18,12 @@ not ingest or manage that KB's data — it only reads from it.
 - Bedrock KB ID: `SWP1IYS4SI`, region `us-east-2`. Referenced by ARN in IAM policies;
   never created/modified by this repo's CDK.
 - Chat and report generation use Claude models via **cross-region inference profile
-  ARNs**, not bare model IDs — most current Claude models on Bedrock require this.
-  The exact profile IDs are configured via CDK context (`chatModelArn`,
-  `reportModelArn` in `cdk.json` or `-c` flags) — verify they exist and that model
-  access is enabled in the Bedrock console for this account before deploying.
+  IDs**, not bare model IDs — most current Claude models on Bedrock require this.
+  Configured via CDK context (`chatModelId`, `reportModelId` in `cdk.json` or `-c`
+  flags) as just the profile ID (e.g. `us.anthropic.claude-opus-4-6-v1`); `ApiStack`
+  builds the full ARN at synth time from account+region so the account ID never has
+  to live in committed config. Both are currently set to Claude Opus 4.6, verified
+  working (model access enabled) in this account as of 2026-07-05.
 - Single-user app: one Cognito user, provisioned manually (see `scripts/seed-cognito-user.ts`),
   self-service sign-up disabled.
 - No deployment has happened yet as of this writing — AWS credentials are not yet
