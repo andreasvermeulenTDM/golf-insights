@@ -1,0 +1,7 @@
+{
+  "apiUrl": "https://REPLACE_ME.execute-api.us-east-2.amazonaws.com",
+  "userPoolId": "us-east-2_REPLACEME",
+  "userPoolClientId": "REPLACE_ME",
+  "cognitoDomain": "https://golf-insights-REPLACE_ME.auth.us-east-2.amazoncognito.com",
+  "region": "us-east-2"
+}

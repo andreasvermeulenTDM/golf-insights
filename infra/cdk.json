@@ -1,0 +1,32 @@
+{
+  "app": "npx ts-node --prefer-ts-exts bin/app.ts",
+  "watch": {
+    "include": ["**"],
+    "exclude": [
+      "README.md",
+      "cdk*.json",
+      "**/*.d.ts",
+      "**/*.js",
+      "tsconfig.json",
+      "package*.json",
+      "node_modules"
+    ]
+  },
+  "context": {
+    "kbId": "SWP1IYS4SI",
+    "kbRegion": "us-east-2",
+    "_comment_modelArns": "Fill these in with verified cross-region inference profile ARNs before deploying (see Phase 0 in the project plan). Format: arn:aws:bedrock:<region>:<account-id>:inference-profile/<profile-id>",
+    "chatModelArn": "",
+    "reportModelArn": "",
+    "callbackUrls": ["http://localhost:5173/"],
+    "logoutUrls": ["http://localhost:5173/"],
+    "ownerEmail": "",
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "@aws-cdk/core:checkSecretUsage": true,
+    "@aws-cdk/core:target-partitions": ["aws", "aws-cn"],
+    "@aws-cdk-containers/ecs-service-extensions:enableDefaultLogDriver": true,
+    "@aws-cdk/aws-apigateway:disableCloudWatchRole": true,
+    "@aws-cdk/core:enablePartitionLiterals": true,
+    "@aws-cdk/aws-iam:minimizePolicies": true
+  }
+}

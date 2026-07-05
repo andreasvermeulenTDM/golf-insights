@@ -1,0 +1,14 @@
+{
+  "name": "golf-insights",
+  "private": true,
+  "workspaces": [
+    "infra",
+    "services/api",
+    "frontend",
+    "scripts"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "synth": "npm run synth -w infra"
+  }
+}

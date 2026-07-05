@@ -1,0 +1,248 @@
+import * as path from "path";
+import { Stack, StackProps, Duration, RemovalPolicy, CfnOutput } from "aws-cdk-lib";
+import { Construct } from "constructs";
+import * as cognito from "aws-cdk-lib/aws-cognito";
+import { HttpApi, CorsHttpMethod, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
+import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
+import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import { Runtime } from "aws-cdk-lib/aws-lambda";
+import * as s3 from "aws-cdk-lib/aws-s3";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as iam from "aws-cdk-lib/aws-iam";
+
+export interface ApiStackProps extends StackProps {
+  kbId: string;
+  kbRegion: string;
+  /** Cross-region inference profile ARN for the chat model. Leave blank until verified (Phase 0). */
+  chatModelArn: string;
+  /** Cross-region inference profile ARN for the one-pager report model. Leave blank until verified (Phase 0). */
+  reportModelArn: string;
+  callbackUrls: string[];
+  logoutUrls: string[];
+  /** Email of the single owner user. If blank, the Cognito user is not auto-created (see scripts/seed-cognito-user.ts). */
+  ownerEmail: string;
+}
+
+const SERVICES_ROOT = path.join(__dirname, "..", "..", "services", "api");
+
+export class ApiStack extends Stack {
+  public readonly httpApiUrl: string;
+  public readonly userPoolId: string;
+  public readonly userPoolClientId: string;
+  public readonly cognitoDomain: string;
+
+  constructor(scope: Construct, id: string, props: ApiStackProps) {
+    super(scope, id, props);
+
+    const kbArn = `arn:aws:bedrock:${props.kbRegion}:${this.account}:knowledge-base/${props.kbId}`;
+
+    // --- Auth: single-user Cognito pool -------------------------------------------------
+    const userPool = new cognito.UserPool(this, "UserPool", {
+      selfSignUpEnabled: false,
+      signInAliases: { email: true },
+      standardAttributes: { email: { required: true, mutable: false } },
+      accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+      // Single-user personal project: safe to destroy/recreate during iteration.
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    const domainPrefix = `golf-insights-${this.account}`;
+    const domain = userPool.addDomain("UserPoolDomain", {
+      cognitoDomain: { domainPrefix },
+    });
+
+    const userPoolClient = userPool.addClient("SpaClient", {
+      generateSecret: false,
+      authFlows: { userSrp: true },
+      oAuth: {
+        flows: { authorizationCodeGrant: true },
+        scopes: [
+          cognito.OAuthScope.OPENID,
+          cognito.OAuthScope.EMAIL,
+          cognito.OAuthScope.PROFILE,
+        ],
+        callbackUrls: props.callbackUrls,
+        logoutUrls: props.logoutUrls,
+      },
+    });
+
+    if (props.ownerEmail) {
+      // Manually provisioned single user; self-service sign-up is disabled.
+      new cognito.CfnUserPoolUser(this, "OwnerUser", {
+        userPoolId: userPool.userPoolId,
+        username: props.ownerEmail,
+        userAttributes: [
+          { name: "email", value: props.ownerEmail },
+          { name: "email_verified", value: "true" },
+        ],
+        desiredDeliveryMediums: ["EMAIL"],
+      });
+    }
+
+    const authorizer = new HttpJwtAuthorizer(
+      "CognitoAuthorizer",
+      `https://cognito-idp.${this.region}.amazonaws.com/${userPool.userPoolId}`,
+      { jwtAudience: [userPoolClient.userPoolClientId] }
+    );
+
+    // --- Storage: generated one-pagers + index -------------------------------------------
+    const reportsBucket = new s3.Bucket(this, "ReportsBucket", {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+    });
+
+    const reportsTable = new dynamodb.Table(this, "ReportsIndexTable", {
+      partitionKey: { name: "reportId", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    // --- Lambdas --------------------------------------------------------------------------
+    const commonBundling = {
+      externalModules: ["@aws-sdk/*"],
+      minify: true,
+    };
+    const runtime = Runtime.NODEJS_20_X;
+    const timeout = Duration.seconds(30);
+
+    const healthFn = new NodejsFunction(this, "HealthFn", {
+      entry: path.join(SERVICES_ROOT, "health", "index.ts"),
+      runtime,
+      timeout: Duration.seconds(5),
+      bundling: commonBundling,
+    });
+
+    const chatFn = new NodejsFunction(this, "ChatFn", {
+      entry: path.join(SERVICES_ROOT, "chat", "index.ts"),
+      runtime,
+      timeout,
+      bundling: commonBundling,
+      environment: {
+        KB_ID: props.kbId,
+        KB_REGION: props.kbRegion,
+        CHAT_MODEL_ARN: props.chatModelArn,
+      },
+    });
+    chatFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["bedrock:RetrieveAndGenerate"],
+        resources: [kbArn],
+      })
+    );
+    if (props.chatModelArn) {
+      chatFn.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+          resources: [props.chatModelArn],
+        })
+      );
+    }
+
+    const generateReportFn = new NodejsFunction(this, "GenerateReportFn", {
+      entry: path.join(SERVICES_ROOT, "generate-report", "index.ts"),
+      runtime,
+      timeout: Duration.seconds(60),
+      bundling: commonBundling,
+      environment: {
+        KB_ID: props.kbId,
+        KB_REGION: props.kbRegion,
+        REPORT_MODEL_ARN: props.reportModelArn,
+        REPORTS_BUCKET: reportsBucket.bucketName,
+        REPORTS_TABLE: reportsTable.tableName,
+      },
+    });
+    generateReportFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["bedrock:Retrieve"],
+        resources: [kbArn],
+      })
+    );
+    if (props.reportModelArn) {
+      generateReportFn.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: ["bedrock:InvokeModel"],
+          resources: [props.reportModelArn],
+        })
+      );
+    }
+    reportsBucket.grantWrite(generateReportFn);
+    reportsTable.grantWriteData(generateReportFn);
+
+    const listReportsFn = new NodejsFunction(this, "ListReportsFn", {
+      entry: path.join(SERVICES_ROOT, "list-reports", "index.ts"),
+      runtime,
+      timeout,
+      bundling: commonBundling,
+      environment: { REPORTS_TABLE: reportsTable.tableName },
+    });
+    reportsTable.grantReadData(listReportsFn);
+
+    const getReportFn = new NodejsFunction(this, "GetReportFn", {
+      entry: path.join(SERVICES_ROOT, "get-report", "index.ts"),
+      runtime,
+      timeout,
+      bundling: commonBundling,
+      environment: {
+        REPORTS_BUCKET: reportsBucket.bucketName,
+        REPORTS_TABLE: reportsTable.tableName,
+      },
+    });
+    reportsBucket.grantRead(getReportFn);
+    reportsTable.grantReadData(getReportFn);
+
+    // --- HTTP API ---------------------------------------------------------------------------
+    const httpApi = new HttpApi(this, "HttpApi", {
+      corsPreflight: {
+        allowOrigins: props.callbackUrls,
+        allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.POST],
+        allowHeaders: ["Authorization", "Content-Type"],
+      },
+    });
+
+    httpApi.addRoutes({
+      path: "/health",
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration("HealthIntegration", healthFn),
+    });
+
+    httpApi.addRoutes({
+      path: "/chat",
+      methods: [HttpMethod.POST],
+      integration: new HttpLambdaIntegration("ChatIntegration", chatFn),
+      authorizer,
+    });
+
+    httpApi.addRoutes({
+      path: "/reports",
+      methods: [HttpMethod.POST],
+      integration: new HttpLambdaIntegration("GenerateReportIntegration", generateReportFn),
+      authorizer,
+    });
+
+    httpApi.addRoutes({
+      path: "/reports",
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration("ListReportsIntegration", listReportsFn),
+      authorizer,
+    });
+
+    httpApi.addRoutes({
+      path: "/reports/{id}",
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration("GetReportIntegration", getReportFn),
+      authorizer,
+    });
+
+    this.httpApiUrl = httpApi.apiEndpoint;
+    this.userPoolId = userPool.userPoolId;
+    this.userPoolClientId = userPoolClient.userPoolClientId;
+    this.cognitoDomain = domain.baseUrl();
+
+    new CfnOutput(this, "HttpApiUrlOutput", { value: this.httpApiUrl });
+    new CfnOutput(this, "UserPoolIdOutput", { value: this.userPoolId });
+    new CfnOutput(this, "UserPoolClientIdOutput", { value: this.userPoolClientId });
+    new CfnOutput(this, "CognitoDomainOutput", { value: this.cognitoDomain });
+  }
+}

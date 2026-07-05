@@ -1,0 +1,175 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #0f1a12;
+  color: #eef4ee;
+}
+
+.centered {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: #14261a;
+  border-bottom: 1px solid #24422f;
+}
+
+.app-header h1 {
+  font-size: 1.1rem;
+  margin: 0;
+  margin-right: auto;
+}
+
+.app-header nav button {
+  margin-right: 0.5rem;
+}
+
+.app-header nav button.active {
+  background: #2f6b45;
+}
+
+main {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+}
+
+button {
+  background: #1f3a27;
+  color: #eef4ee;
+  border: 1px solid #2f6b45;
+  border-radius: 6px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+input {
+  background: #14261a;
+  color: #eef4ee;
+  border: 1px solid #2f6b45;
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+}
+
+.chat-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.message-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.message {
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  max-width: 80%;
+}
+
+.message-user {
+  align-self: flex-end;
+  background: #2f6b45;
+}
+
+.message-assistant {
+  align-self: flex-start;
+  background: #1f3a27;
+}
+
+.chat-input {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.chat-input input {
+  flex: 1;
+}
+
+.reports-view {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.reports-sidebar {
+  width: 280px;
+  border-right: 1px solid #24422f;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.reports-sidebar form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.reports-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.reports-list button {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  background: transparent;
+  border-color: transparent;
+}
+
+.reports-list button:hover {
+  background: #1f3a27;
+}
+
+.reports-date {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.report-detail {
+  flex: 1;
+  padding: 1.5rem 2rem;
+  overflow-y: auto;
+}
+
+.error {
+  color: #ff8f8f;
+}
