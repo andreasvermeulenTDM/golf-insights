@@ -14,6 +14,8 @@ import * as iam from "aws-cdk-lib/aws-iam";
 export interface ApiStackProps extends StackProps {
   kbId: string;
   kbRegion: string;
+  /** Name of the pre-existing S3 bucket backing the Knowledge Base, for direct/exhaustive reads (not managed by this stack). */
+  golfDataBucket: string;
   /** Cross-region inference profile ID for the chat model, e.g. "us.anthropic.claude-opus-4-6-v1". Leave blank until verified (Phase 0). */
   chatModelId: string;
   /** Cross-region inference profile ID for the one-pager report model. Leave blank until verified (Phase 0). */
@@ -191,6 +193,36 @@ export class ApiStack extends Stack {
     reportsBucket.grantWrite(generateReportFn);
     reportsTable.grantWriteData(generateReportFn);
 
+    const golfDataBucket = s3.Bucket.fromBucketName(this, "GolfDataBucket", props.golfDataBucket);
+
+    const seasonOverviewFn = new NodejsFunction(this, "SeasonOverviewFn", {
+      entry: path.join(SERVICES_ROOT, "season-overview", "index.ts"),
+      runtime,
+      // Reads and parses every 2025 tournament CSV in the bucket, then a Bedrock call --
+      // slower than the other routes, so it gets a longer timeout.
+      timeout: Duration.seconds(90),
+      memorySize: 512,
+      bundling: commonBundling,
+      environment: {
+        KB_REGION: props.kbRegion,
+        REPORT_MODEL_ARN: reportModelArn,
+        REPORTS_BUCKET: reportsBucket.bucketName,
+        REPORTS_TABLE: reportsTable.tableName,
+        GOLF_DATA_BUCKET: props.golfDataBucket,
+      },
+    });
+    golfDataBucket.grantRead(seasonOverviewFn);
+    if (reportModelArn) {
+      seasonOverviewFn.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: ["bedrock:InvokeModel", "bedrock:GetInferenceProfile"],
+          resources: [reportModelArn, foundationModelArn(props.reportModelId)],
+        })
+      );
+    }
+    reportsBucket.grantWrite(seasonOverviewFn);
+    reportsTable.grantWriteData(seasonOverviewFn);
+
     const listReportsFn = new NodejsFunction(this, "ListReportsFn", {
       entry: path.join(SERVICES_ROOT, "list-reports", "index.ts"),
       runtime,
@@ -256,6 +288,13 @@ export class ApiStack extends Stack {
       path: "/reports/{id}",
       methods: [HttpMethod.GET],
       integration: new HttpLambdaIntegration("GetReportIntegration", getReportFn),
+      authorizer,
+    });
+
+    httpApi.addRoutes({
+      path: "/season-overview",
+      methods: [HttpMethod.POST],
+      integration: new HttpLambdaIntegration("SeasonOverviewIntegration", seasonOverviewFn),
       authorizer,
     });
 

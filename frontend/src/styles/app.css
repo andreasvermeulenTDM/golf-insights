@@ -130,6 +130,12 @@ input {
   overflow-y: auto;
 }
 
+.season-overview-button {
+  width: 100%;
+  margin-bottom: 1rem;
+  background: #2f6b45;
+}
+
 .reports-sidebar form {
   display: flex;
   flex-direction: column;

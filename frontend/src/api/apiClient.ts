@@ -65,3 +65,7 @@ export function listReports(idToken: string): Promise<ReportSummary[]> {
 export function getReport(idToken: string, reportId: string): Promise<ReportDetail> {
   return request<ReportDetail>(`/reports/${encodeURIComponent(reportId)}`, idToken);
 }
+
+export function generateSeasonOverview(idToken: string): Promise<ReportDetail> {
+  return request<ReportDetail>("/season-overview", idToken, { method: "POST" });
+}

@@ -8,6 +8,7 @@ const app = new cdk.App();
 
 const kbId = app.node.tryGetContext("kbId") as string;
 const kbRegion = app.node.tryGetContext("kbRegion") as string;
+const golfDataBucket = app.node.tryGetContext("golfDataBucket") as string;
 const chatModelId = app.node.tryGetContext("chatModelId") as string;
 const reportModelId = app.node.tryGetContext("reportModelId") as string;
 const callbackUrls = (app.node.tryGetContext("callbackUrls") as string[]) ?? [
@@ -33,6 +34,7 @@ const apiStack = new ApiStack(app, "GolfInsightsApiStack", {
   env,
   kbId,
   kbRegion,
+  golfDataBucket,
   chatModelId,
   reportModelId,
   callbackUrls,

@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import { useAuth } from "../auth/AuthContext";
 import {
   generateReport,
+  generateSeasonOverview,
   getReport,
   listReports,
   type ReportDetail,
@@ -15,6 +16,7 @@ export function ReportsView() {
   const [reports, setReports] = useState<ReportSummary[]>([]);
   const [selected, setSelected] = useState<ReportDetail | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [generatingSeason, setGeneratingSeason] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function refreshList() {
@@ -48,9 +50,31 @@ export function ReportsView() {
     setSelected(await getReport(idToken, reportId));
   }
 
+  async function handleGenerateSeasonOverview() {
+    if (!idToken) return;
+    setGeneratingSeason(true);
+    setError(null);
+    try {
+      const report = await generateSeasonOverview(idToken);
+      setSelected(report);
+      await refreshList();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setGeneratingSeason(false);
+    }
+  }
+
   return (
     <div className="reports-view">
       <div className="reports-sidebar">
+        <button
+          className="season-overview-button"
+          onClick={handleGenerateSeasonOverview}
+          disabled={generatingSeason}
+        >
+          {generatingSeason ? "Scoring 2025 season..." : "Generate 2025 Season Overview"}
+        </button>
         <form
           onSubmit={(e) => {
             e.preventDefault();

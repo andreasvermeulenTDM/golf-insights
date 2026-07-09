@@ -15,6 +15,7 @@
   "context": {
     "kbId": "SWP1IYS4SI",
     "kbRegion": "us-east-2",
+    "golfDataBucket": "golf-data-153372323411-us-east-2-an",
     "_comment_models": "Cross-region inference profile IDs, verified working in this account/region as of 2026-07-05 (see Phase 0 in the project plan). The stack builds the full ARN at synth time from account+region, so no account ID needs to live in this file.",
     "chatModelId": "us.anthropic.claude-opus-4-6-v1",
     "reportModelId": "us.anthropic.claude-opus-4-6-v1",
